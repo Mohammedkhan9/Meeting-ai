@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Meeting AI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }
+        header { background: #2c3e50; color: white; padding: 20px 40px; }
+        header h1 { font-size: 24px; }
+        header p { opacity: 0.7; font-size: 14px; }
+        .container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+        .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        input, textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 10px; }
+        textarea { height: 140px; resize: vertical; }
+        button { background: #2c3e50; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-size: 15px; cursor: pointer; }
+        button:hover { background: #34495e; }
+        .tag { display: inline-block; background: #e8f4fd; color: #2980b9; padding: 4px 10px; border-radius: 20px; font-size: 13px; margin: 3px; }
+        .risk-tag { background: #fdecea; color: #e74c3c; }
+        .history-item { border-left: 4px solid #2c3e50; padding: 12px 16px; margin-bottom: 12px; background: #f8f9fa; border-radius: 0 8px 8px 0; }
+        #mainContent { display: none; }
+        #errorMsg { color: #e74c3c; margin-top: 8px; font-size: 14px; }
+        #status { margin-top: 10px; font-size: 14px; color: #27ae60; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🤖 Meeting AI</h1>
+        <p>Paste your meeting transcript and get AI-powered insights</p>
+    </header>
+
+    <div class="container">
+
+        <!-- Login Card -->
+        <div class="card" id="loginCard">
+            <h2 style="margin-bottom:16px">🔐 Login</h2>
+            <input id="username" placeholder="Username" />
+            <input id="password" type="password" placeholder="Password" />
+            <button onclick="login()">Login</button>
+            <p id="errorMsg"></p>
+        </div>
+
+        <!-- Main Content (hidden until logged in) -->
+        <div id="mainContent">
+
+            <!-- Process Meeting -->
+            <div class="card">
+                <h2 style="margin-bottom:16px">📝 Process Meeting Transcript</h2>
+                <textarea id="transcript" placeholder="Paste your meeting transcript here..."></textarea>
+                <button onclick="processMeeting()">⚡ Process Meeting</button>
+                <p id="status"></p>
+            </div>
+
+            <!-- Results -->
+            <div class="card" id="resultCard" style="display:none">
+                <h2 style="margin-bottom:16px">📊 Results</h2>
+                <div style="margin-bottom:16px">
+                    <h3>📝 Summary</h3>
+                    <p id="summary" style="margin-top:8px; color:#555"></p>
+                </div>
+                <div style="margin-bottom:16px">
+                    <h3>✅ Decisions</h3>
+                    <div id="decisions" style="margin-top:8px"></div>
+                </div>
+                <div style="margin-bottom:16px">
+                    <h3>📋 Action Items</h3>
+                    <div id="action_items" style="margin-top:8px"></div>
+                </div>
+                <div>
+                    <h3>⚠️ Risks</h3>
+                    <div id="risks" style="margin-top:8px"></div>
+                </div>
+            </div>
+
+            <!-- History -->
+            <div class="card">
+                <h2 style="margin-bottom:16px">📜 Meeting History</h2>
+                <button onclick="loadHistory()" style="margin-bottom:16px">🔄 Refresh History</button>
+                <div id="history"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        let token = null;
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            const form = new FormData();
+            form.append('username', username);
+            form.append('password', password);
+
+            const res = await fetch('/login', { method: 'POST', body: form });
+            const data = await res.json();
+
+            if (data.access_token) {
+                token = data.access_token;
+                document.getElementById('loginCard').style.display = 'none';
+                document.getElementById('mainContent').style.display = 'block';
+                loadHistory();
+            } else {
+                document.getElementById('errorMsg').textContent = '❌ Wrong username or password!';
+            }
+        }
+
+        async function processMeeting() {
+            const transcript = document.getElementById('transcript').value.trim();
+            if (!transcript) { alert('Please enter a transcript!'); return; }
+
+            document.getElementById('status').textContent = '⏳ Processing...';
+
+            const res = await fetch('/process-meeting', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ transcript })
+            });
+            const data = await res.json();
+
+            document.getElementById('status').textContent = '✅ Done!';
+            document.getElementById('resultCard').style.display = 'block';
+            document.getElementById('summary').textContent = data.summary || 'N/A';
+
+            document.getElementById('decisions').innerHTML =
+                (data.decisions?.length ? data.decisions.map(d => `<span class="tag">${d}</span>`).join('') : '<span style="color:#999">None</span>');
+
+            document.getElementById('action_items').innerHTML =
+                (data.action_items?.length ? data.action_items.map(a =>
+                    `<span class="tag">👤 ${a.owner} — ${a.task} (${a.deadline})</span>`).join('') : '<span style="color:#999">None</span>');
+
+            document.getElementById('risks').innerHTML =
+                (data.risks?.length ? data.risks.map(r => `<span class="tag risk-tag">⚠️ ${r}</span>`).join('') : '<span style="color:#999">None</span>');
+
+            loadHistory();
+        }
+
+        async function loadHistory() {
+            const res = await fetch('/history', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            document.getElementById('history').innerHTML = data.length ?
+                data.reverse().map(m => `
+                    <div class="history-item">
+                        <p><strong>📝 Transcript:</strong> ${m.transcript.substring(0, 100)}...</p>
+                        <p><strong>Summary:</strong> ${m.output.summary || 'N/A'}</p>
+                    </div>`).join('')
+                : '<p style="color:#999">No meetings yet.</p>';
+        }
+    </script>
+</body>
+</html>
